@@ -33,5 +33,5 @@ cd elastic-calculator
 
 2. Соберите
 ```bash
-pyinstaller --onefile --windowed --icon=icon_elastic.ico --add-data "icon_elastic.ico;." ElasticCalculator.py
+pyinstaller --onefile --windowed --icon=icon_elastic.ico --add-data "icon_elastic.ico;." elastic_calcs.py
 ```
