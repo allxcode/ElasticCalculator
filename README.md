@@ -18,7 +18,7 @@
 - `sys`
 
 ![image](https://github.com/user-attachments/assets/862a9b9d-733e-43b4-aa26-e52feb023a16)
-Поддержка ввода 2.54 и 2,54
+Поддержка ввода чисел с точкой и запятой (2.54 и 2,54)
 
 ---
 
