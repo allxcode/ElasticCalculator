@@ -1,4 +1,3 @@
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 import math
@@ -6,6 +5,7 @@ import os
 import sys
 
 modules = ["K", "E", "G", "ν", "λ", "M", "ρ", "c_l", "c_s", "c_b"]
+spall_modules = ["σ_HEL", "σ_spall", "Y"]
 dimensioned = {"K", "E", "G", "λ", "M"}
 velocity = {"c_l", "c_s", "c_b"}
 
@@ -13,6 +13,11 @@ unit_options = {
     "GPa": 1e9,
     "MPa": 1e6,
     "Pa": 1,
+}
+
+velocity_unit_options = {
+    "м/с": 1,
+    "км/с": 1000,
 }
 
 def normalize_number(value):
@@ -74,6 +79,31 @@ def calculate_all(known):
         "M": M
     }
 
+def toggle_spall():
+    """Показать/скрыть поля ввода откольных параметров."""
+    if spall_var.get():
+        lbl_uhel.grid(row=row_spall_input, column=0, sticky="e")
+        entry_uhel.grid(row=row_spall_input, column=1)
+        unit_uhel_combo.grid(row=row_spall_input, column=2)
+
+        lbl_dufs.grid(row=row_spall_input + 1, column=0, sticky="e")
+        entry_dufs.grid(row=row_spall_input + 1, column=1)
+        unit_dufs_combo.grid(row=row_spall_input + 1, column=2)
+
+        for i, lbl in enumerate(spall_labels):
+            lbl.grid(row=row_spall_results + i, column=0, columnspan=4, sticky="w")
+    else:
+        lbl_uhel.grid_remove()
+        entry_uhel.grid_remove()
+        unit_uhel_combo.grid_remove()
+
+        lbl_dufs.grid_remove()
+        entry_dufs.grid_remove()
+        unit_dufs_combo.grid_remove()
+
+        for lbl in spall_labels:
+            lbl.grid_remove()
+
 def update_table():
     try:
         p1, p2 = combo1.get(), combo2.get()
@@ -100,12 +130,13 @@ def update_table():
 
         # Расчет скоростей
         G, K, M = result["G"], result["K"], result["M"]
+        nu = result["ν"]
         cl = (M / rho) ** 0.5
         cs = (G / rho) ** 0.5
         cb = (K / rho) ** 0.5
 
         result.update({
-            "ρ": rho / 1000,  # для вывода
+            "ρ": rho / 1000,  # для вывода в g/cm³
             "c_l": cl / 1000,
             "c_s": cs / 1000,
             "c_b": cb / 1000
@@ -119,7 +150,7 @@ def update_table():
             if val is None:
                 table_labels[i]["text"] = f"{key} = —"
             elif key in velocity:
-                table_labels[i]["text"] = f"{key} = {val:.3f} kg/m³"
+                table_labels[i]["text"] = f"{key} = {val:.3f} км/с"
             elif key == "ρ":
                 table_labels[i]["text"] = f"{key} = {val:.3f} g/cm³"
             elif key in dimensioned:
@@ -127,17 +158,56 @@ def update_table():
             else:
                 table_labels[i]["text"] = f"{key} = {val:.5f}"
 
+        # Расчет откольных параметров
+        if spall_var.get():
+            uhel_str = entry_uhel.get().strip()
+            dufs_str = entry_dufs.get().strip()
+
+            if not uhel_str or not dufs_str:
+                raise ValueError("Введите значения u_HEL и Δu_fs для расчёта откольных параметров.")
+
+            u_hel = normalize_number(uhel_str)
+            d_ufs = normalize_number(dufs_str)
+
+            # Перевод в м/с
+            u_hel *= velocity_unit_options.get(unit_uhel_combo.get(), 1)
+            d_ufs *= velocity_unit_options.get(unit_dufs_combo.get(), 1)
+
+            # σ_HEL = ½ · ρ₀ · c_l · u_HEL  (всё в СИ: кг/м³, м/с -> Па)
+            sigma_hel = 0.5 * rho * cl * u_hel
+
+            # σ_spall = ½ · ρ₀ · c_b · Δu_fs
+            sigma_spall = 0.5 * rho * cb * d_ufs
+
+            # Y = σ_HEL · (1 - 2ν) / (1 - ν)
+            if abs(1 - nu) < 1e-15:
+                raise ValueError("Невозможно вычислить Y: ν ≈ 1.")
+            Y = u_hel*cs*cs/cl*rho #sigma_hel * (1 - 2 * nu) / (1 - nu)
+
+            spall_results = {
+                "σ_HEL": sigma_hel,
+                "σ_spall": sigma_spall,
+                "Y": Y
+            }
+
+            for i, key in enumerate(spall_modules):
+                val = spall_results[key]
+                spall_labels[i]["text"] = f"{key} = {val / output_div:.3f} {output_unit}"
+
     except Exception as e:
         messagebox.showerror("Ошибка", str(e))
 
+# ===================== GUI =====================
+
 root = tk.Tk()
-root.title("Elastic Calculator")
+root.title("Elastic Calculator v0.2.1")
 
 # Установка кастомной иконки
-icon_path = os.path.join(os.path.dirname(sys.argv[0]), "icon_elastic.ico")
-if os.path.exists(icon_path):
-    root.iconbitmap(icon_path)
+#icon_path = os.path.join(os.path.dirname(sys.argv[0]), "icon_elastic.ico")
+#if os.path.exists(icon_path):
+#    root.iconbitmap(icon_path)
 
+# --- Строка 0: Плотность ---
 tk.Label(root, text="Плотность ρ:").grid(row=0, column=0, sticky="e")
 entry_rho = tk.Entry(root)
 entry_rho.grid(row=0, column=1)
@@ -145,6 +215,7 @@ unit_rho = ttk.Combobox(root, values=["kg/m³", "g/cm³"], width=6)
 unit_rho.set("g/cm³")
 unit_rho.grid(row=0, column=2)
 
+# --- Строка 1: 1-й параметр ---
 tk.Label(root, text="1-й параметр:").grid(row=1, column=0, sticky="e")
 combo1 = ttk.Combobox(root, values=modules[:-4])
 combo1.grid(row=1, column=1)
@@ -153,6 +224,7 @@ entry1.grid(row=1, column=2)
 combo1_unit = ttk.Combobox(root, values=["GPa", "MPa", "Pa"], width=6)
 combo1_unit.grid(row=1, column=3)
 
+# --- Строка 2: 2-й параметр ---
 tk.Label(root, text="2-й параметр:").grid(row=2, column=0, sticky="e")
 combo2 = ttk.Combobox(root, values=modules[:-4])
 combo2.grid(row=2, column=1)
@@ -175,21 +247,55 @@ def update_units(event=None):
 combo1.bind("<<ComboboxSelected>>", update_units)
 combo2.bind("<<ComboboxSelected>>", update_units)
 
+# --- Строка 3: Галочка откольных параметров ---
+spall_var = tk.BooleanVar(value=False)
+chk_spall = tk.Checkbutton(root, text="Откольные параметры", variable=spall_var, command=toggle_spall)
+chk_spall.grid(row=3, column=0, columnspan=2, sticky="w", padx=5)
+
+# --- Строка 4: Кнопка ---
 btn_calc = tk.Button(root, text="Рассчитать", command=update_table)
-btn_calc.grid(row=3, column=0, columnspan=4, pady=5)
+btn_calc.grid(row=4, column=0, columnspan=4, pady=5)
+
+# --- Строки 5-6: Ввод u_HEL и Δu_fs (скрыты по умолчанию) ---
+row_spall_input = 5
+
+lbl_uhel = tk.Label(root, text="u_HEL:")
+entry_uhel = tk.Entry(root)
+unit_uhel_combo = ttk.Combobox(root, values=["м/с", "км/с"], width=6)
+unit_uhel_combo.set("м/с")
+
+lbl_dufs = tk.Label(root, text="Δu_fs:")
+entry_dufs = tk.Entry(root)
+unit_dufs_combo = ttk.Combobox(root, values=["м/с", "км/с"], width=6)
+unit_dufs_combo.set("м/с")
+
+# --- Строки 7+: Результаты основных модулей ---
+row_main_results = 7
 
 table_labels = []
 for i, mod in enumerate(modules):
     label = tk.Label(root, text=f"{mod} = —", anchor="w", width=40)
-    label.grid(row=4+i, column=0, columnspan=4, sticky="w")
+    label.grid(row=row_main_results + i, column=0, columnspan=4, sticky="w")
     table_labels.append(label)
 
-if getattr(sys, 'frozen', False):
-    base_path = sys._MEIPASS  # для .exe
-else:
-    base_path = os.path.abspath(".")
+# --- Откольные результаты (после основных, скрыты по умолчанию) ---
+row_spall_results = row_main_results + len(modules)
 
+spall_labels = []
+for i, mod in enumerate(spall_modules):
+    label = tk.Label(root, text=f"{mod} = —", anchor="w", width=40)
+    spall_labels.append(label)
+    # grid вызывается в toggle_spall
+
+# Иконка: в .exe берём из _MEIPASS, иначе из папки скрипта
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(os.path.abspath(__file__))
+# Иконка для frozen (exe) режима
 icon_path = os.path.join(base_path, "icon_elastic.ico")
-root.iconbitmap(icon_path)
+if os.path.exists(icon_path):
+    root.iconbitmap(icon_path)
+
 
 root.mainloop()
